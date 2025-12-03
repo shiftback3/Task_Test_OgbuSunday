@@ -1,0 +1,259 @@
+import React, { createContext, useContext, useState, useEffect } from 'react';
+import type { ReactNode } from 'react';
+import echo from '../utils/echo';
+
+export interface Notification {
+  id: string;
+  title: string;
+  message: string;
+  action: 'created' | 'updated' | 'deleted' | 'redeemed';
+  timestamp: string;
+  brt: {
+    id: string;
+    brt_code: string;
+    reserved_amount: string | number;
+    status: string;
+    user: {
+      name: string;
+      email: string;
+    };
+  };
+  read?: boolean;
+}
+
+interface NotificationContextType {
+  notifications: Notification[];
+  addNotification: (notification: Notification) => void;
+  removeNotification: (id: string) => void;
+  markAsRead: (id: string) => void;
+  markAllAsRead: () => void;
+  unreadCount: number;
+}
+
+const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+
+export const useNotifications = () => {
+  const context = useContext(NotificationContext);
+  if (!context) {
+    throw new Error('useNotifications must be used within a NotificationProvider');
+  }
+  return context;
+};
+
+interface NotificationProviderProps {
+  children: ReactNode;
+}
+
+export const NotificationProvider: React.FC<NotificationProviderProps> = ({ children }) => {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  useEffect(() => {
+    let isDestroyed = false;
+    let subscriptionChannel: any = null;
+    
+    console.log('🔔 [NEW] Setting up real-time notifications...');
+    console.log('🔔 Echo instance:', echo);
+    console.log('🔔 Echo connector type:', echo.connector);
+
+    // Add manual test first
+    if (Notification.permission === 'granted') {
+      console.log('🔔 Testing manual browser notification...');
+      try {
+        new Notification('🔔 Setup Test', { 
+          body: 'Notifications are working!',
+          icon: '/favicon.ico'
+        });
+        console.log('🔔 ✅ Manual notification works!');
+      } catch (error) {
+        console.error('🔔 ❌ Manual notification failed:', error);
+      }
+    }
+
+    // Define channel setup function first
+    const setupChannel = () => {
+      if (isDestroyed || subscriptionChannel) return;
+      
+      console.log('🔔 📡 Setting up channel subscription...');
+      
+      // Listen for BRT notifications on the public channel
+      subscriptionChannel = echo.channel('brt-notifications');
+      console.log('🔔 Channel created:', subscriptionChannel);
+      
+      subscriptionChannel.subscribed(() => {
+        if (isDestroyed) return;
+        console.log('🔔 ✅ Successfully subscribed to brt-notifications channel');
+      });
+      
+      subscriptionChannel.error((error: any) => {
+        console.error('🔔 ❌ Channel error:', error);
+      });
+      
+      console.log('🔔 📡 Starting to listen for brt.notification events...');
+      
+      subscriptionChannel.listen('brt.notification', (data: Notification) => {
+        if (isDestroyed) return;
+        
+        console.log('🔥 ✅ INCOMING NOTIFICATION EVENT RECEIVED!');
+        console.log('🔥 📋 Raw data:', data);
+        console.log('🔥 📋 JSON:', JSON.stringify(data, null, 2));
+        
+        const notification = { ...data, read: false };
+        addNotification(notification);
+        
+        // Show browser notification
+        if (Notification.permission === 'granted') {
+          console.log('🔔 📱 Showing browser notification...');
+          try {
+            new Notification(data.title, {
+              body: data.message,
+              icon: '/favicon.ico',
+              tag: data.brt.brt_code,
+            });
+            console.log('🔔 ✅ Browser notification shown!');
+          } catch (error) {
+            console.error('🔔 ❌ Browser notification failed:', error);
+          }
+        }
+      });
+    };
+
+    // Add Pusher connection event listeners
+    if (echo.connector && echo.connector.pusher) {
+      console.log('🔔 Adding Pusher connection listeners...');
+      
+      const onConnected = () => {
+        if (isDestroyed) return;
+        console.log('🔔 ✅ Pusher connected successfully!');
+        console.log('🔔 Connection state:', echo.connector.pusher.connection.state);
+        console.log('🔔 Socket ID:', echo.connector.pusher.connection.socket_id);
+        
+        // Set up channel subscription AFTER connection
+        setupChannel();
+      };
+        if (isDestroyed || subscriptionChannel) return;
+        
+        console.log('🔔 📡 Setting up channel subscription...');
+        
+        // Listen for BRT notifications on the public channel
+        subscriptionChannel = echo.channel('brt-notifications');
+        console.log('🔔 Channel created:', subscriptionChannel);
+        
+        subscriptionChannel.subscribed(() => {
+          if (isDestroyed) return;
+          console.log('🔔 ✅ Successfully subscribed to brt-notifications channel');
+        });
+        
+        subscriptionChannel.error((error: any) => {
+          console.error('🔔 ❌ Channel error:', error);
+        });
+        
+        console.log('🔔 📡 Starting to listen for brt.notification events...');
+        
+        subscriptionChannel.listen('brt.notification', (data: Notification) => {
+          if (isDestroyed) return;
+          
+          console.log('🔥 ✅ INCOMING NOTIFICATION EVENT RECEIVED!');
+          console.log('🔥 📋 Raw data:', data);
+          console.log('🔥 📋 JSON:', JSON.stringify(data, null, 2));
+          
+          const notification = { ...data, read: false };
+          addNotification(notification);
+          
+          // Show browser notification
+          if (Notification.permission === 'granted') {
+            console.log('🔔 📱 Showing browser notification...');
+            try {
+              new Notification(data.title, {
+                body: data.message,
+                icon: '/favicon.ico',
+                tag: data.brt.brt_code,
+              });
+              console.log('🔔 ✅ Browser notification shown!');
+            } catch (error) {
+              console.error('🔔 ❌ Browser notification failed:', error);
+            }
+          }
+        });
+      };
+      
+      echo.connector.pusher.connection.bind('connected', onConnected);
+      
+      echo.connector.pusher.connection.bind('disconnected', () => {
+        console.log('🔔 ❌ Pusher disconnected');
+      });
+      
+      echo.connector.pusher.connection.bind('error', (error: any) => {
+        console.error('🔔 ❌ Pusher connection error:', error);
+      });
+
+      echo.connector.pusher.connection.bind('state_change', (states: any) => {
+        console.log('🔔 🔄 Pusher state change:', states);
+      });
+
+      // Check initial connection state
+      console.log('🔔 Initial Pusher state:', echo.connector.pusher.connection.state);
+    } else {
+      console.error('🔔 ❌ Pusher connector not found! Check Echo configuration.');
+    }
+
+    // Channel setup is now handled in setupChannel() function above
+    
+    // If already connected, set up channel immediately
+    if (echo.connector && echo.connector.pusher && echo.connector.pusher.connection.state === 'connected') {
+      setupChannel();
+    }
+
+    // Request notification permission and log current status
+    console.log('🔔 Current notification permission:', Notification.permission);
+    if (Notification.permission === 'default') {
+      console.log('🔔 Requesting notification permission...');
+      Notification.requestPermission().then(permission => {
+        console.log('🔔 Notification permission granted:', permission);
+      });
+    } else {
+      console.log('🔔 Notification permission already set:', Notification.permission);
+    }
+
+    return () => {
+      console.log('🔔 Cleaning up notifications...');
+      echo.leaveChannel('brt-notifications');
+    };
+  }, []);
+
+  const addNotification = (notification: Notification) => {
+    setNotifications(prev => [notification, ...prev.slice(0, 49)]); // Keep only last 50 notifications
+  };
+
+  const removeNotification = (id: string) => {
+    setNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  const markAsRead = (id: string) => {
+    setNotifications(prev => 
+      prev.map(n => n.id === id ? { ...n, read: true } : n)
+    );
+  };
+
+  const markAllAsRead = () => {
+    setNotifications(prev => 
+      prev.map(n => ({ ...n, read: true }))
+    );
+  };
+
+  const unreadCount = notifications.filter(n => !n.read).length;
+
+  return (
+    <NotificationContext.Provider
+      value={{
+        notifications,
+        addNotification,
+        removeNotification,
+        markAsRead,
+        markAllAsRead,
+        unreadCount,
+      }}
+    >
+      {children}
+    </NotificationContext.Provider>
+  );
+};

@@ -1,0 +1,539 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>BRT Analytics Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            line-height: 1.6;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: white;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .last-updated {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 10px;
+            border-radius: 8px;
+            color: white;
+            display: inline-block;
+            margin-bottom: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .card {
+            background: rgba(255, 255, 255, 0.95);
+            border-radius: 15px;
+            padding: 25px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .card:hover {
+            transform: translateY(-5px);
+        }
+
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 1.3rem;
+        }
+
+        .stat-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 15px;
+        }
+
+        .stat-item {
+            text-align: center;
+            padding: 15px;
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 10px;
+            transition: transform 0.2s ease;
+        }
+
+        .stat-item:hover {
+            transform: scale(1.05);
+        }
+
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            display: block;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9rem;
+            opacity: 0.9;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin-top: 20px;
+        }
+
+        .users-list {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .user-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px;
+            margin: 8px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            border-left: 4px solid #667eea;
+        }
+
+        .user-name {
+            font-weight: 600;
+            color: #333;
+        }
+
+        .user-email {
+            font-size: 0.9rem;
+            color: #666;
+        }
+
+        .user-count {
+            background: #667eea;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: bold;
+        }
+
+        .realtime-indicator {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 25px;
+            font-size: 0.9rem;
+            animation: pulse 2s infinite;
+            z-index: 1000;
+        }
+
+        .realtime-indicator.offline {
+            background: #dc3545;
+            animation: none;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.7; }
+            100% { opacity: 1; }
+        }
+
+        .trend-item {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f8f9fa;
+            border-radius: 8px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .status-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.8rem;
+            font-weight: bold;
+            text-transform: uppercase;
+        }
+
+        .status-active { background: #d4edda; color: #155724; }
+        .status-expired { background: #f8d7da; color: #721c24; }
+        .status-redeemed { background: #d1ecf1; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>🎫 BRT Analytics Dashboard</h1>
+            <div class="last-updated" id="lastUpdated">
+                Last updated: Loading...
+            </div>
+        </header>
+
+        <div class="realtime-indicator" id="realtimeStatus">
+            🔴 Real-time Updates
+        </div>
+
+        <!-- Overview Stats -->
+        <div class="grid">
+            <div class="card">
+                <h3>📊 Overview Statistics</h3>
+                <div class="stat-grid" id="overviewStats">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📈 Status Distribution</h3>
+                <div class="chart-container">
+                    <canvas id="statusChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- Time Period Stats -->
+        <div class="grid">
+            <div class="card">
+                <h3>📅 Today's Activity</h3>
+                <div class="stat-grid" id="todayStats">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📊 This Week</h3>
+                <div class="stat-grid" id="weekStats">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>📈 This Month</h3>
+                <div class="stat-grid" id="monthStats">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid">
+            <div class="card">
+                <h3>📈 Daily BRT Creation (Last 30 Days)</h3>
+                <div class="chart-container">
+                    <canvas id="dailyChart"></canvas>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3>🏆 Top Users</h3>
+                <div class="users-list" id="topUsers">
+                    <!-- Will be populated by JavaScript -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Trends -->
+        <div class="card">
+            <h3>📊 Recent Trends (Last 7 Days)</h3>
+            <div id="trendsData">
+                <!-- Will be populated by JavaScript -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class BRTDashboard {
+            constructor() {
+                this.apiBase = 'http://127.0.0.1:8000/api/v1';
+                this.charts = {};
+                this.pusher = null;
+                this.initPusher();
+                this.loadDashboard();
+
+                // Refresh data every 30 seconds as backup
+                setInterval(() => this.loadDashboard(), 30000);
+            }
+
+            initPusher() {
+                try {
+                    // Initialize Pusher for real-time updates
+                    this.pusher = new Pusher('your-pusher-key', {
+                        cluster: 'your-cluster'
+                    });
+
+                    // Subscribe to analytics channel
+                    const channel = this.pusher.subscribe('analytics');
+
+                    channel.bind('stats.updated', (data) => {
+                        console.log('Real-time stats update received:', data);
+                        this.updateRealTimeStats(data.stats);
+                        this.updateStatus(true);
+                    });
+
+                    this.updateStatus(true);
+                } catch (error) {
+                    console.log('Pusher not configured, using polling instead');
+                    this.updateStatus(false);
+                }
+            }
+
+            updateStatus(online) {
+                const indicator = document.getElementById('realtimeStatus');
+                indicator.textContent = online ? '🟢 Real-time Connected' : '🟡 Polling Mode';
+                indicator.className = online ? 'realtime-indicator' : 'realtime-indicator offline';
+            }
+
+            async loadDashboard() {
+                try {
+                    const response = await fetch(`${this.apiBase}/analytics/dashboard`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.renderDashboard(data.data);
+                        document.getElementById('lastUpdated').textContent =
+                            `Last updated: ${new Date(data.data.generated_at).toLocaleString()}`;
+                    }
+                } catch (error) {
+                    console.error('Error loading dashboard:', error);
+                }
+            }
+
+            async loadTrends() {
+                try {
+                    const response = await fetch(`${this.apiBase}/analytics/trends?period=daily&days=7`);
+                    const data = await response.json();
+
+                    if (data.success) {
+                        this.renderTrends(data.data.trends);
+                    }
+                } catch (error) {
+                    console.error('Error loading trends:', error);
+                }
+            }
+
+            renderDashboard(data) {
+                this.renderOverviewStats(data.overview);
+                this.renderTimePeriodStats(data.time_periods);
+                this.renderStatusChart(data.charts.status_distribution);
+                this.renderDailyChart(data.charts.daily_creation);
+                this.renderTopUsers(data.top_users);
+                this.loadTrends();
+            }
+
+            renderOverviewStats(overview) {
+                const container = document.getElementById('overviewStats');
+                container.innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${overview.total_brts}</span>
+                        <span class="stat-label">Total BRTs</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${overview.active_brts}</span>
+                        <span class="stat-label">Active</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${overview.expired_brts}</span>
+                        <span class="stat-label">Expired</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${overview.redeemed_brts}</span>
+                        <span class="stat-label">Redeemed</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">$${overview.total_reserved_amount}</span>
+                        <span class="stat-label">Total Value</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">${overview.total_users}</span>
+                        <span class="stat-label">Users</span>
+                    </div>
+                `;
+            }
+
+            renderTimePeriodStats(periods) {
+                document.getElementById('todayStats').innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${periods.today.brts_created}</span>
+                        <span class="stat-label">BRTs Created</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">$${periods.today.reserved_amount}</span>
+                        <span class="stat-label">Value</span>
+                    </div>
+                `;
+
+                document.getElementById('weekStats').innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${periods.this_week.brts_created}</span>
+                        <span class="stat-label">BRTs Created</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">$${periods.this_week.reserved_amount}</span>
+                        <span class="stat-label">Value</span>
+                    </div>
+                `;
+
+                document.getElementById('monthStats').innerHTML = `
+                    <div class="stat-item">
+                        <span class="stat-value">${periods.this_month.brts_created}</span>
+                        <span class="stat-label">BRTs Created</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-value">$${periods.this_month.reserved_amount}</span>
+                        <span class="stat-label">Value</span>
+                    </div>
+                `;
+            }
+
+            renderStatusChart(statusData) {
+                const ctx = document.getElementById('statusChart').getContext('2d');
+
+                if (this.charts.statusChart) {
+                    this.charts.statusChart.destroy();
+                }
+
+                this.charts.statusChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: Object.keys(statusData).map(s => s.charAt(0).toUpperCase() + s.slice(1)),
+                        datasets: [{
+                            data: Object.values(statusData),
+                            backgroundColor: ['#28a745', '#dc3545', '#17a2b8'],
+                            borderWidth: 2,
+                            borderColor: '#fff'
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            renderDailyChart(dailyData) {
+                const ctx = document.getElementById('dailyChart').getContext('2d');
+
+                if (this.charts.dailyChart) {
+                    this.charts.dailyChart.destroy();
+                }
+
+                const labels = dailyData.map(d => d.date);
+                const counts = dailyData.map(d => d.count);
+                const amounts = dailyData.map(d => d.total_amount);
+
+                this.charts.dailyChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: labels.reverse(),
+                        datasets: [{
+                            label: 'BRTs Created',
+                            data: counts.reverse(),
+                            borderColor: '#667eea',
+                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
+                            tension: 0.4,
+                            fill: true
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+
+            renderTopUsers(users) {
+                const container = document.getElementById('topUsers');
+                container.innerHTML = users.map(user => `
+                    <div class="user-item">
+                        <div>
+                            <div class="user-name">${user.name}</div>
+                            <div class="user-email">${user.email}</div>
+                        </div>
+                        <div class="user-count">${user.brt_count} BRTs</div>
+                    </div>
+                `).join('');
+            }
+
+            renderTrends(trends) {
+                const container = document.getElementById('trendsData');
+                container.innerHTML = trends.map(trend => `
+                    <div class="trend-item">
+                        <div>
+                            <strong>${trend.period}</strong>
+                            <span class="status-badge status-${trend.status}">${trend.status}</span>
+                        </div>
+                        <div>
+                            <strong>${trend.count} BRTs</strong> - $${trend.total_amount}
+                        </div>
+                    </div>
+                `).join('');
+            }
+
+            updateRealTimeStats(stats) {
+                // Update the overview stats with real-time data
+                const overview = {
+                    total_brts: stats.total_brts,
+                    active_brts: stats.active_brts,
+                    expired_brts: stats.expired_brts,
+                    redeemed_brts: stats.redeemed_brts,
+                    total_reserved_amount: stats.total_reserved_amount.toLocaleString(),
+                    total_users: 'N/A' // Not included in real-time stats
+                };
+
+                this.renderOverviewStats(overview);
+
+                document.getElementById('lastUpdated').textContent =
+                    `Last updated: ${new Date(stats.last_updated).toLocaleString()}`;
+            }
+        }
+
+        // Initialize dashboard when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new BRTDashboard();
+        });
+    </script>
+</body>
+</html>
